@@ -4,7 +4,7 @@ import sample
 logger=logging.getLogger(__file__)
 
 # This design makes mixin versions of the Place and Transition
-# meaning that their base classes make them entries in
+# meaning that their base classes make them intrusive entries in
 # an adjacency list to define a graph. The subclasses
 # define whatever the particular process needs.
 class Place:
@@ -15,7 +15,7 @@ class Transition:
     def __init__(self):
         self.place=dict()
         self.dep=dict()
-        self.distribution=None
+        self._distribution=None
 
 class LLCP:
     """
@@ -42,11 +42,12 @@ class LLCP:
     def current_time(self):
         return self._current_time
 
-    def fire(self, transition, when):
+    def fire(self, transition, when, report=None):
         self._current_time=when
         transition.fire()
-        transition.distribution=None
-        self._initial_enable()
+        transition._distribution=None
+        #self._initial_enable()
+        self._incremental_update(transition, report)
 
     def enabled_transitions(self, functor):
         for t in self.t:
@@ -61,6 +62,21 @@ class LLCP:
             else:
                 t.distribution=None
 
+    def _incremental_update(self, fired_transition, report):
+        affected_transitions=set()
+        for p in fired_transition.place.values():
+            affected_transitions.update(p._adjacency)
+        for t in affected_transitions:
+            was_enabled=t.distribution is not None
+            enabled, dist=t.enable(self._current_time)
+            if enabled:
+                t.distribution=dist
+            else:
+                t.distribution=None
+            if was_enabled or enabled:
+                report(t, was_enabled, enabled)
+
+
 
 class CountPlace(Place):
     def __init__(self, id):
@@ -71,7 +87,7 @@ class CountPlace(Place):
 class RecoverTransition(Transition):
     def __init__(self):
         super(RecoverTransition, self).__init__()
-        self.nr=sample.NextReactionRecord()
+        self._nr=sample.NextReactionRecord()
 
     def enable(self, now):
         if self.place['i'].count>0:
@@ -87,7 +103,7 @@ class RecoverTransition(Transition):
 class InfectTransition(Transition):
     def __init__(self):
         super(InfectTransition, self).__init__()
-        self.nr=sample.NextReactionRecord()
+        self._nr=sample.NextReactionRecord()
 
     def enable(self, now):
         if self.place['i'].count>0 and self.place['s'].count>0:

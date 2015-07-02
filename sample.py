@@ -28,9 +28,10 @@ class FirstReaction:
 
 class NextReactionRecord:
     def __init__(self):
-        self.remaining_exponential_interval=0.0
+        self.remaining_exponential_interval=None
         self.last_modification_time=0.0
         self.heap_entry=[0, self]
+
 
 class NextReaction:
     def __init__(self):
@@ -42,7 +43,10 @@ class NextReaction:
         return None
 
     def fire(self, system, transition):
-        pass
+        system.fire(transition, when, self._observe)
 
     def enable(self, transition, distribution, now, rng):
         heapq.heappush(self.heap, entry)
+
+    def _observe(self, transition, was_enabled, is_enabled):
+        pass
