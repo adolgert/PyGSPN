@@ -42,8 +42,8 @@ class WeibullDistribution:
         return now + value
 
     def hazard_integral(self, t0, t1):
-        return np.pow((t1-self.te)/self.lam, self.k)
-            -np.pow((t0-self.te)/self.lam, self.k)
+        return ( np.pow((t1-self.te)/self.lam, self.k)
+            -np.pow((t0-self.te)/self.lam, self.k) )
 
     def implicit_hazard_integral(self, xa, t0):
         return self.te+ self.lam*np.pow(xa+np.pow((t0-self.te)/self.lam,
@@ -51,4 +51,3 @@ class WeibullDistribution:
 
     def enabling_time(self):
         return self.te
-        

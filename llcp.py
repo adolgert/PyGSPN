@@ -7,15 +7,6 @@ logger=logging.getLogger(__file__)
 # meaning that their base classes make them intrusive entries in
 # an adjacency list to define a graph. The subclasses
 # define whatever the particular process needs.
-class Place:
-    def __init__(self):
-        self._adjacency=list()
-
-class Transition:
-    def __init__(self):
-        self.place=dict()
-        self.dep=dict()
-        self._distribution=None
 
 class LLCP:
     """
@@ -27,17 +18,22 @@ class LLCP:
         self.t=list()
 
     def add_place(self, place):
+        place._adjacency=list() # inject
         self.p.append(place)
 
     def add_transition(self, transition):
+        """
+        A transition must have two dictionary members,
+        place and dep, which are places used in firing
+        and dependencies for determining hazard rates.
+        """
+        transition._distribution=None # inject
         self.t.append(transition)
-        for p in transition.place.values():
-            p._adjacency.append(transition)
         for d in transition.dep.values():
             d._adjacency.append(transition)
 
-    def init(self):
-        self._initial_enable()
+    def init(self, report=None):
+        self._initial_enable(report)
 
     def current_time(self):
         return self._current_time
@@ -45,53 +41,53 @@ class LLCP:
     def fire(self, transition, when, report=None):
         self._current_time=when
         transition.fire()
+        if report is not None:
+            report(transition, transition_distribution, None,
+                self._current_time)
         transition._distribution=None
-        #self._initial_enable()
         self._incremental_update(transition, report)
 
     def enabled_transitions(self, functor):
         for t in self.t:
-            if t.distribution is not None:
-                functor(t, t.distribution)
+            if t._distribution is not None:
+                functor(t, t._distribution, self._current_time)
 
-    def _initial_enable(self):
+    def _initial_enable(self, report):
         for t in self.t:
             enabled, dist=t.enable(self._current_time)
             if enabled:
-                t.distribution=dist
+                if report is not None:
+                    report(t, None, dist, self._current_time)
+                t._distribution=dist
             else:
-                t.distribution=None
+                t._distribution=None
 
     def _incremental_update(self, fired_transition, report):
         affected_transitions=set()
         for p in fired_transition.place.values():
             affected_transitions.update(p._adjacency)
         for t in affected_transitions:
-            was_enabled=t.distribution is not None
+            was_enabled=t._distribution is not None
             enabled, dist=t.enable(self._current_time)
-            if enabled:
-                t.distribution=dist
-            else:
-                t.distribution=None
-            if was_enabled or enabled:
-                report(t, was_enabled, enabled)
+            if report is not None and (was_enabled or enabled):
+                report(t, t._distribution, dist, self._current_time)
+            t._distribution=dist
 
 
-
-class CountPlace(Place):
+import distributions
+class CountPlace:
     def __init__(self, id):
-        super(CountPlace, self).__init__()
         self.id=id
         self.count=0
 
-class RecoverTransition(Transition):
+class RecoverTransition:
     def __init__(self):
-        super(RecoverTransition, self).__init__()
-        self._nr=sample.NextReactionRecord()
+        self.place=dict()
+        self.dep=dict()
 
     def enable(self, now):
-        if self.place['i'].count>0:
-            return (True, lambda x, y: now+y.exponential(1.0))
+        if self.dep['i'].count>0:
+            return (True, distributions.ExponentialDistribution(1.0, now))
         else:
             return (False, None)
 
@@ -100,14 +96,14 @@ class RecoverTransition(Transition):
         self.place['r'].count=1
 
 
-class InfectTransition(Transition):
+class InfectTransition:
     def __init__(self):
-        super(InfectTransition, self).__init__()
-        self._nr=sample.NextReactionRecord()
+        self.place=dict()
+        self.dep=dict()
 
     def enable(self, now):
-        if self.place['i'].count>0 and self.place['s'].count>0:
-            return (True, lambda x, y: now+y.exponential(0.5))
+        if self.dep['i'].count>0 and self.dep['s'].count>0:
+            return (True, distributions.ExponentialDistribution(0.5, now))
         else:
             return (False, None)
 
@@ -129,6 +125,7 @@ def BuildSIR(individual_cnt):
     for internal_idx in range(individual_cnt):
         for internal_trans in ['r']:
             t=RecoverTransition()
+            t.dep['i']=places[(internal_idx, 'i')]
             t.place['i']=places[(internal_idx, 'i')]
             t.place['r']=places[(internal_idx, 'r')]
             net.add_transition(t)
@@ -137,8 +134,9 @@ def BuildSIR(individual_cnt):
         for target_idx in range(individual_cnt):
             if source_idx!=target_idx:
                 t=InfectTransition()
+                t.dep['s']=places[(target_idx, 's')]
+                t.dep['i']=places[(source_idx, 'i')]
                 t.place['s']=places[(target_idx, 's')]
-                t.place['i']=places[(source_idx, 'i')]
                 t.place['n']=places[(target_idx, 'i')]
                 net.add_transition(t)
 

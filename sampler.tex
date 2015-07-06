@@ -45,5 +45,19 @@ step, ask which transitions are enabled and sample
 from those transitions, accounting for rescaling
 transitions which haven't fired yet but may still fire.
 
+\section{Next Reaction Method}
+We need a monotone priority queue which supports
+deletion and update. It's a priority queue because we want the
+next reaction, in time, to fire. It's monotone because
+once we choose a reaction, all other reactions will be later.
+We need deletion and update because an enabled transition
+can be re-enabled with a new firing time or deleted to
+remove the transition.
+
+A Fibonacci Heap would work. In practice, it would a Pairing Heap
+is simpler to implement and has a lower factor on its complexity.
+We can make it an option to use either. Neither is monotone,
+so there may be some advancement to make by finding a monotone
+priority queue.
 
 \end{document}
