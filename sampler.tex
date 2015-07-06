@@ -1,0 +1,49 @@
+\documentclass{article}
+
+\usepackage{times}
+\usepackage{mathptmx}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{The Sampler Is Part of the Process}
+\author{Andrew J.\ Dolgert}
+\date{5 July 2015}
+
+\begin{document}
+\maketitle
+
+I'm writing code to sample a Markov Renewal Process
+which is specified as competing processes. These competing
+processes, are long-lived, meaning they aren't redefined
+each time something fires. This is a more general
+of chemical kinetics sampled with Gillespie's method.
+
+My goal is a safe and efficient expression of a
+discrete space, continuous-time stochastic model using
+this long-lived competing process. In order to understand
+this calculation, and in order to write the code,
+I want to separate the process from sampling, likelihood
+calculation, and other measurements of the process.
+
+A process is all $X_n$ and $T_n$, along with the
+probabilities for those $X_n$ and $T_n$ given the previous
+states and times, $X_{n-1}$ and $T_{n-1}$.
+For calculation, we would hope to separate two things,
+the specification of the process, which is the likelihood
+of any $X_{n+1}$ and $T_{n+1}$ given $X_n$ and $T_n$,
+from the actual states and times themselves.
+We could think of the process specification as an
+operator which, given current states and times, 
+assigns likelihoods to new states and times.
+Instead, we define a process as both the operator
+and the current state.
+
+
+A First Reaction method sampler will, at every time
+step, ask which transitions are enabled and sample
+from those transitions, accounting for rescaling
+transitions which haven't fired yet but may still fire.
+
+
+\end{document}
