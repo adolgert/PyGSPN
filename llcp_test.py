@@ -2,20 +2,25 @@ import logging
 import numpy as np
 import sample
 import sir
+import runner
 
 logger = logging.getLogger(__file__)
+
+def observer(transition, when):
+    if 'i' in transition.place.keys():
+        print("Recover {0} {1}".format(transition.place['i'].id, when))
+    else:
+        print("Infect {0} {1}".format(transition.place['s'].id, when))
+    return True
 
 def test_sir():
     rng=np.random.RandomState()
     rng.seed(33333)
     net=sir.BuildSIR(10)
     sampler=sample.NextReaction(net, rng)
-    sampler.init()
-    transition, when=sampler.next()
-    while transition is not None:
-        logger.debug("{0} {1}".format(transition, when))
-        sampler.fire(transition, when)
-        transition, when=sampler.next()
+    run=runner.RunnerFSM(sampler, observer)
+    run.init()
+    run.run()
 
 
 if __name__ == "__main__":
