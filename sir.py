@@ -1,34 +1,80 @@
 import logging
-import gspn
-import stochvar
+import distributions
+import llcp
 
 logger=logging.getLogger(__file__)
 
+
+class CountPlace:
+    def __init__(self, id):
+        self.id=id
+        self.count=0
+
+class RecoverTransition:
+    def __init__(self):
+        self.place=dict()
+        self.dep=dict()
+
+    def enable(self, now):
+        if self.dep['i'].count>0:
+            return (True, distributions.ExponentialDistribution(1.0, now))
+        else:
+            return (False, None)
+
+    def fire(self):
+        self.place['i'].count=0
+        self.place['r'].count=1
+
+
+class InfectTransition:
+    def __init__(self):
+        self.place=dict()
+        self.dep=dict()
+
+    def enable(self, now):
+        if self.dep['i'].count>0 and self.dep['s'].count>0:
+            return (True, distributions.ExponentialDistribution(0.5, now))
+        else:
+            return (False, None)
+
+    def fire(self):
+        self.place['s'].count=0
+        self.place['n'].count=1
+
+
 def BuildSIR(individual_cnt):
-    net=gspn.GSPNProcess()
+    net=llcp.LLCP()
+    places=dict()
     for add_idx in range(individual_cnt):
         for disease_state in ['s', 'i', 'r']:
-            net.add_place((disease_state, add_idx))
+            p=CountPlace((add_idx, disease_state))
+            places[p.id]=p
+            net.add_place(p)
+            p.count=0
 
     for internal_idx in range(individual_cnt):
         for internal_trans in ['r']:
-            flows=[gspn.TokenFlow(0, 1, 1, 1),]
-            recover=gspn.StoichiometricTransition(internal_trans, flows,
-                stochvar.Weibull(1.0, 2.0, 0.0))
-            net.add_transition(recover,
-                [('i', internal_idx), ('r', internal_idx)], [])
+            t=RecoverTransition()
+            t.dep['i']=places[(internal_idx, 'i')]
+            t.place['i']=places[(internal_idx, 'i')]
+            t.place['r']=places[(internal_idx, 'r')]
+            net.add_transition(t)
 
     for source_idx in range(individual_cnt):
         for target_idx in range(individual_cnt):
-            flows=[gspn.TokenFlow(0, 1, 2, 1), gspn.TokenFlow(1, 1, 1, 1)]
-            infect=gspn.StoichiometricTransition('i', flows,
-                stochvar.Exponential(1.0))
-            net.add_transition(infect,
-                [('s', target_idx), ('i', source_idx), ('i', target_idx)], [])
+            if source_idx!=target_idx:
+                t=InfectTransition()
+                t.dep['s']=places[(target_idx, 's')]
+                t.dep['i']=places[(source_idx, 'i')]
+                t.place['s']=places[(target_idx, 's')]
+                t.place['n']=places[(target_idx, 'i')]
+                net.add_transition(t)
 
+    initial_idx=0
+    for s_idx in range(individual_cnt):
+        if s_idx==initial_idx:
+            places[(s_idx, 'i')].count=1
+        else:
+            places[(s_idx, 's')].count=1
+    net.init()
     return net
-
-
-if __name__ == "__main__":
-    individual_cnt=10
-    net=BuildSIR(individual_cnt)

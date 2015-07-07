@@ -1,14 +1,14 @@
 import logging
 import numpy as np
-import llcp
 import sample
+import sir
 
 logger = logging.getLogger(__file__)
 
 def test_sir():
     rng=np.random.RandomState()
     rng.seed(33333)
-    net=llcp.BuildSIR(10)
+    net=sir.BuildSIR(10)
     sampler=sample.NextReaction(net, rng)
     sampler.init()
     transition, when=sampler.next()
