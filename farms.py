@@ -61,6 +61,7 @@ class InfectiousIntensity:
             return 1
         return None
 
+
 class InfectPartial:
     """
     This is the action-part of a transition.
@@ -79,6 +80,7 @@ class InfectPartial:
             return False
     def fire(self):
         self.place.state=FarmState.latent
+
 
 class Farm(object):
     """
@@ -107,25 +109,6 @@ class Farm(object):
 
     def infection_partial(self):
         return InfectPartial(self)
-
-    def infectious(self):
-        return self.place.state in (FarmState.subclinical,
-            FarmState.clinical)
-
-    def infectious_depends(self):
-        return [self.place]
-
-    def susceptible(self):
-        return self.place.state in (FarmState.susceptible,)
-
-    def susceptible_depends(self):
-        return [self.place]
-
-    def infect(self):
-        self.place.state=FarmState.latent
-
-    def infect_affected(self):
-        return [self.place]
 
 
 class InfectTransition(object):
