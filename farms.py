@@ -47,7 +47,8 @@ class FarmABTransition:
 
 class InfectiousIntensity:
     """
-    This is the rate part of a transition.
+    This is part of a transition which contributes to the hazard
+    rate through a factor called an intensity.
     """
     def __init__(self, farm):
         self.farm=farm
@@ -64,7 +65,7 @@ class InfectiousIntensity:
 
 class InfectPartial:
     """
-    This is the action-part of a transition.
+    This is the action-part of a transition. It isn't a whole transition.
     """
     def __init__(self, farm):
         self.farm=farm
@@ -112,6 +113,10 @@ class Farm(object):
 
 
 class InfectTransition(object):
+    """
+    This transition brings together pieces from different models
+    into a full transition.
+    """
     def __init__(self, intensity, action):
         self.intensity=intensity
         self.action=action
@@ -136,7 +141,7 @@ class InfectTransition(object):
         self.action.fire()
 
 
-class InfectNeighbor(object):
+class InfectNeighborModel(object):
     """
     This is a scenario model for infection of one farm by another.
     """
@@ -154,6 +159,20 @@ class InfectNeighbor(object):
             self.farmb.infectious_intensity(), self.farma.infection_partial()))
 
 
+
+class DirectTransition(object):
+    """
+    Represents direct contact where a farm makes a certain
+    number of shipments a day.
+    """
+
+class DirectModel(object):
+    def __init__(self, transport_graph):
+        self.transport=transport_graph
+
+
+
+
 def Build(individual_cnt):
     net=llcp.LLCP()
     farms=list()
@@ -165,7 +184,7 @@ def Build(individual_cnt):
         f.write_transitions(net)
 
     for a, b in itertools.combinations(farms, 2):
-        infect=InfectNeighbor(a, b)
+        infect=InfectNeighborModel(a, b)
         infect.write_places(net)
         infect.write_transitions(net)
 
