@@ -282,7 +282,7 @@ class pairing_heap:
         If node is not part of this heap, both heaps may become gibberish.
         """
         self._check_heap_node (node)
-        if self._cmp(node._item, item) < 0:
+        if not self._gt(node._item, item):
             raise WrongAdjustKeyDirection
         node._item = item
         if id(self._root) == id(node):

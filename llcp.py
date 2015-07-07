@@ -28,12 +28,10 @@ class LLCP:
     """
     def __init__(self):
         self._current_time=0.0
-        self.p=list()
         self.t=list()
 
     def add_place(self, place):
         place._adjacency=list() # inject
-        self.p.append(place)
 
     def add_transition(self, transition):
         """

@@ -71,8 +71,13 @@ class NextReaction:
                 when_fire=newdist.implicit_hazard_integral(
                     record.remaining_exponential_interval, now)
                 if record.heap_entry is not None:
-                    self.priority.adjust_key(record.heap_entry,
-                        (when_fire, transition))
+                    if when_fire<record.heap_entry._item[0]:
+                        self.priority.adjust_key(record.heap_entry,
+                            (when_fire, transition))
+                    else:
+                        self.priority.delete(record.heap_entry)
+                        record.heap_entry=self.priority.insert(
+                            (when_fire, transition))
                 else:
                     record.heap_entry=self.priority.insert(
                         (when_fire, transition))
