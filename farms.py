@@ -49,8 +49,9 @@ class InfectiousIntensity:
     """
     This is the rate part of a transition.
     """
-    def __init__(self, farm_place):
-        self.place=place
+    def __init__(self, farm):
+        self.farm=farm
+        self.place=farm.place
     def depends(self):
         return [self.place]
     def affected(self):
@@ -66,7 +67,8 @@ class InfectPartial:
     """
     def __init__(self, farm):
         self.farm=farm
-    def depends(sefl):
+        self.place=farm.place
+    def depends(self):
         return [self.farm.place]
     def affected(self):
         return [self.farm.place]
@@ -75,7 +77,7 @@ class InfectPartial:
             return True
         else:
             return False
-    def fire(self, now):
+    def fire(self):
         self.place.state=FarmState.latent
 
 class Farm(object):
@@ -104,7 +106,7 @@ class Farm(object):
         return InfectiousIntensity(self)
 
     def infection_partial(self):
-        return InfectionPartial(self)
+        return InfectPartial(self)
 
     def infectious(self):
         return self.place.state in (FarmState.subclinical,
@@ -140,7 +142,7 @@ class InfectTransition(object):
         return self.action.affected()
 
     def enabled(self, now):
-        intensity=self.intensity.enabled()
+        intensity=self.intensity.intensity(now)
         if intensity is not None and self.action.enabled():
             rate=0.5*intensity
             return (True, distributions.ExponentialDistribution(rate, now))
@@ -148,7 +150,7 @@ class InfectTransition(object):
             return (False, None)
 
     def fire(self):
-        self.action.infect()
+        self.action.fire()
 
 
 class InfectNeighbor(object):
