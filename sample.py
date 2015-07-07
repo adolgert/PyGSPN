@@ -50,16 +50,12 @@ class NextReaction:
 
     def next(self):
         if not self.priority.empty():
-            return self.priority.peek()
-        return None
+            v=self.priority.peek()
+            return (v[1], v[0])
+        return (None, None)
 
 
     def fire(self, transition, when):
-        if self.priority.peek()==(when, transition):
-            self.priority.extract()
-        else:
-            self.priority.delete(transition._nr.heap_entry)
-
         self.system.fire(transition, when, self._observe)
 
 

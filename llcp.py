@@ -42,7 +42,7 @@ class LLCP:
         self._current_time=when
         transition.fire()
         if report is not None:
-            report(transition, transition_distribution, None,
+            report(transition, transition._distribution, None,
                 self._current_time)
         transition._distribution=None
         self._incremental_update(transition, report)

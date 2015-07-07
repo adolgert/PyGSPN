@@ -1,8 +1,9 @@
+import logging
 import numpy as np
 import llcp
 import sample
 
-
+logger = logging.getLogger(__file__)
 
 def test_sir():
     rng=np.random.RandomState()
@@ -10,12 +11,13 @@ def test_sir():
     net=llcp.BuildSIR(10)
     sampler=sample.NextReaction(net, rng)
     sampler.init()
-    next=sampler.next()
-    while next[0] is not None:
-        print(next)
-        net.fire(next[0], next[1])
-        next=sampler.next()
+    transition, when=sampler.next()
+    while transition is not None:
+        logger.debug("{0} {1}".format(transition, when))
+        sampler.fire(transition, when)
+        transition, when=sampler.next()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG)
     test_sir()

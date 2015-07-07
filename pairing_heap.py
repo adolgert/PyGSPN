@@ -116,7 +116,7 @@ class heap_node:
     In the C implementation, all of this will be enforced.
 
     """
-    __slots__ = ('_item', '_child', '_sibling', '_parents')
+    __slots__ = ('_item', '_child', '_sibling', '_parent')
 
     def __init__(self, item):
         self._item = item
@@ -218,7 +218,7 @@ class pairing_heap:
         "Return the number of items in the heap."
         return self._len
 
-    def _cmp(self, item1, item2):
+    def _gt(self, item1, item2):
         "Compare two items using the heap's comparison functions."
         if self._key:
             item1 = getattr(item1, self._key)
@@ -227,10 +227,10 @@ class pairing_heap:
         if self._cmpfunc:
             c = self._cmpfunc(item1, item2)
         else:
-            c = cmp(item1, item2)
+            c = item1 > item2
 
         if self._reverse:
-            c = -c
+            c = not c
 
         return c
 
@@ -239,9 +239,7 @@ class pairing_heap:
         if not node1: return node2
         if not node2: return node1
 
-        c = self._cmp(node1._item, node2._item)
-
-        if c > 0:
+        if self._gt(node1._item, node2._item):
             node2._add_child (node1)
             return node2
         else:
