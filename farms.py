@@ -100,6 +100,12 @@ class Farm(object):
             lambda now: distributions.ExponentialDistribution(0.5, now))
         writer.add_transition(t)
 
+    def infectious_intensity(self):
+        return InfectiousIntensity(self)
+
+    def infection_partial(self):
+        return InfectionPartial(self)
+
     def infectious(self):
         return self.place.state in (FarmState.subclinical,
             FarmState.clinical)
@@ -121,26 +127,28 @@ class Farm(object):
 
 
 class InfectTransition(object):
-    def __init__(self, farma, farmb):
-        self.a=farma
-        self.b=farmb
+    def __init__(self, intensity, action):
+        self.intensity=intensity
+        self.action=action
 
     def depends(self):
-        deps=self.a.infectious_depends()
-        deps.extend(self.b.susceptible_depends())
+        deps=self.intensity.depends()
+        deps.extend(self.action.depends())
         return deps
 
     def affected(self):
-        return self.b.infect_affected()
+        return self.action.affected()
 
     def enabled(self, now):
-        if self.a.infectious() and self.b.susceptible():
-            return (True, distributions.ExponentialDistribution(0.5, now))
+        intensity=self.intensity.enabled()
+        if intensity is not None and self.action.enabled():
+            rate=0.5*intensity
+            return (True, distributions.ExponentialDistribution(rate, now))
         else:
             return (False, None)
 
     def fire(self):
-        self.b.infect()
+        self.action.infect()
 
 
 class InfectNeighbor(object):
@@ -155,8 +163,10 @@ class InfectNeighbor(object):
         pass
 
     def write_transitions(self, writer):
-        writer.add_transition(InfectTransition(self.farma, self.farmb))
-        writer.add_transition(InfectTransition(self.farmb, self.farma))
+        writer.add_transition(InfectTransition(
+            self.farma.infectious_intensity(), self.farmb.infection_partial()))
+        writer.add_transition(InfectTransition(
+            self.farmb.infectious_intensity(), self.farma.infection_partial()))
 
 
 def Build(individual_cnt):
@@ -186,7 +196,8 @@ def observer(transition, when):
         print("AB {0} {1} {2} {3}".format(transition.place.farm.name,
             transition.a, transition.b, when))
     elif isinstance(transition, InfectTransition):
-        print("Infect {0} {1} {2}".format(transition.a.name, transition.b.name,
+        print("Infect {0} {1} {2}".format(transition.intensity.place.farm.name,
+            transition.action.place.farm.name,
             when))
     else:
         print("Unknown transition {0}".format(transition))
