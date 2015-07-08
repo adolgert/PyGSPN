@@ -56,7 +56,7 @@ class NextReaction:
 
 
     def fire(self, transition, when):
-        self.system.fire(transition, when, self._observe)
+        self.system.fire(transition, when, self.rng, self._observe)
 
 
     def _observe(self, transition, olddist, newdist, now):

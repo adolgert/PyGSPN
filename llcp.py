@@ -50,9 +50,9 @@ class LLCP:
     def current_time(self):
         return self._current_time
 
-    def fire(self, transition, when, report=None):
+    def fire(self, transition, when, rng, report=None):
         self._current_time=when
-        transition.fire()
+        transition.fire(when, rng)
         if report is not None:
             report(transition, transition._distribution, None,
                 self._current_time)

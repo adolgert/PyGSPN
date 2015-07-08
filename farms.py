@@ -47,7 +47,7 @@ class FarmABTransition:
         else:
             return (False, None)
 
-    def fire(self):
+    def fire(self, now, rng):
         self.place.state=self.b
 
 
@@ -68,6 +68,19 @@ class InfectiousIntensity:
             return 1
         return None
 
+class DetectionIntensity(object):
+    def __init__(self, farm):
+        self.farm=farm
+        self.place=farm.place
+    def depends(self):
+        return [self.place]
+    def affected(self):
+        return []
+    def intensity(self, now):
+        if self.place.state in (FarmState.clinical, FarmState.recovered):
+            return 1
+        return None
+
 
 class InfectPartial:
     """
@@ -85,7 +98,7 @@ class InfectPartial:
             return True
         else:
             return False
-    def fire(self):
+    def fire(self, now, rng):
         self.place.state=FarmState.latent
 
 
@@ -117,6 +130,9 @@ class Farm(object):
     def infection_partial(self):
         return InfectPartial(self)
 
+    def detectable_intensity(self):
+        return DetectionIntensity(self)
+
 
 ##############################################################
 # Kernel-based neighbor infection
@@ -146,8 +162,8 @@ class InfectTransition(object):
         else:
             return (False, None)
 
-    def fire(self):
-        self.action.fire()
+    def fire(self, now, rng):
+        self.action.fire(now, rng)
 
 
 class InfectNeighborModel(object):
@@ -184,22 +200,23 @@ class RestrictionTransition(object):
 
     def depends(self):
         dep=self.detectable.depends()
-        dep.extend(self.place)
+        dep.extend([self.place])
         return dep
 
     def affected(self):
         return [self.place]
 
     def enabled(self, now):
-        if (self.detectable.intensity() is not None) and (self.restricted_date
-                is not None):
+        detectable=self.detectable.intensity(now) is not None
+        unrestricted=self.place.restricted_date is None
+        if detectable and unrestricted:
             if self.te is None:
                 self.te=now
-            return (True, distributions.ExponentialDistribution(0.05, self.te))
+            return (True, distributions.ExponentialDistribution(1, self.te))
         else:
             return (False, None)
 
-    def fire(self, now):
+    def fire(self, now, rng):
         self.place.restricted_date=now
 
 class RestrictionIntensity(object):
@@ -280,6 +297,10 @@ def Build():
         infect=InfectNeighborModel(a, b)
         infect.write_places(net)
         infect.write_transitions(net)
+
+    restrictions=MovementRestrictionsModel(landscape)
+    restrictions.write_places(net)
+    restrictions.write_transitions(net)
 
     initial_idx=0
     farms[initial_idx].place.state=FarmState.latent

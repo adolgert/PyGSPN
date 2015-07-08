@@ -30,7 +30,7 @@ class RecoverTransition:
         else:
             return (False, None)
 
-    def fire(self):
+    def fire(self, now, rng):
         self.i.count=0
         self.r.count=1
 
@@ -53,7 +53,7 @@ class InfectTransition:
         else:
             return (False, None)
 
-    def fire(self):
+    def fire(self, now, rng):
         self.s1.count=0
         self.i1.count=1
 
