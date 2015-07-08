@@ -2,13 +2,19 @@ import logging
 import itertools
 #from enum import Enum
 import numpy as np
+import scipy.spatial.distance as distance
 import distributions
 import llcp
 import sample
 import runner
+import point_process
 
 logger=logging.getLogger(__file__)
 
+
+##############################################################
+# Within-farm disease model
+##############################################################
 class FarmState(object):
     susceptible=1
     latent=2
@@ -112,6 +118,9 @@ class Farm(object):
         return InfectPartial(self)
 
 
+##############################################################
+# Kernel-based neighbor infection
+##############################################################
 class InfectTransition(object):
     """
     This transition brings together pieces from different models
@@ -159,25 +168,109 @@ class InfectNeighborModel(object):
             self.farmb.infectious_intensity(), self.farma.infection_partial()))
 
 
+##############################################################
+# Movement restrictions
+##############################################################
+class RestrictionPlace(object):
+    def __init__(self):
+        self.restricted_date=None
 
+class RestrictionTransition(object):
+    def __init__(self, farm, restriction_place):
+        self.farm=farm
+        self.place=restriction_place
+        self.detectable=farm.detectable_intensity()
+        self.te=None
+
+    def depends(self):
+        dep=self.detectable.depends()
+        dep.extend(self.place)
+        return dep
+
+    def affected(self):
+        return [self.place]
+
+    def enabled(self, now):
+        if (self.detectable.intensity() is not None) and (self.restricted_date
+                is not None):
+            if self.te is None:
+                self.te=now
+            return (True, distributions.ExponentialDistribution(0.05, self.te))
+        else:
+            return (False, None)
+
+    def fire(self, now):
+        self.place.restricted_date=now
+
+class RestrictionIntensity(object):
+    def __init__(self, place):
+        self.place=place
+    def depends(self):
+        return [self.place]
+    def affected(self):
+        return []
+    def intensity(self, now):
+        if self.restriction_place is None:
+            return None
+        else:
+            # some kind of increasing restriction
+            return (now-self.place.restricted_date)
+
+
+class MovementRestrictionsModel(object):
+    def __init__(self, landscape):
+        self.landscape=landscape
+        self.restriction_place=RestrictionPlace()
+
+    def write_places(self, writer):
+        writer.add_place(self.restriction_place)
+
+    def write_transitions(self, writer):
+        for farm in self.landscape.farms:
+            t=RestrictionTransition(farm, self.restriction_place)
+            writer.add_transition(t)
+    def restriction_intensity(self):
+        return RestrictionIntensity(self.restriction_place)
+
+
+
+##############################################################
+# Direct Movement Model
+##############################################################
 class DirectTransition(object):
     """
     Represents direct contact where a farm makes a certain
     number of shipments a day.
     """
+    def __init__(self, farm, model):
+        self.farm=farm
+        self.model=model
+    def depends(self):
+        pass
 
 class DirectModel(object):
-    def __init__(self, transport_graph):
-        self.transport=transport_graph
+    def __init__(self, landscape):
+        self.landscape=landscape
 
 
 
 
-def Build(individual_cnt):
+class Landscape(object):
+    def __init__(self):
+        self.farm_locations=point_process.thomas_point_process_2D(
+            5, 0.1, 5, (0, 1, 0, 1))
+        individual_cnt=self.farm_locations.shape[0]
+        self.distances=distance.squareform(distance.pdist(self.farm_locations,
+            "euclidean"))
+        self.farms=list()
+        for add_idx in range(individual_cnt):
+            self.farms.append(Farm(add_idx))
+
+
+def Build():
     net=llcp.LLCP()
-    farms=list()
-    for add_idx in range(individual_cnt):
-        farms.append(Farm(add_idx))
+    landscape=Landscape()
+    farms=landscape.farms
 
     for f in farms:
         f.write_places(net)
@@ -210,7 +303,7 @@ def observer(transition, when):
 def test_farm():
     rng=np.random.RandomState()
     rng.seed(33333)
-    net=Build(10)
+    net=Build()
     sampler=sample.NextReaction(net, rng)
     run=runner.RunnerFSM(sampler, observer)
     run.init()
