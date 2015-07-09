@@ -15,20 +15,20 @@ logger=logging.getLogger(__file__)
 ##############################################################
 # Within-farm disease model
 ##############################################################
-class FarmState(object):
+class DiseaseState(object):
     susceptible=1
     latent=2
     subclinical=3
     clinical=4
     recovered=5
 
-class FarmPlace(object):
+class DiseasePlace(object):
     def __init__(self, farm):
         self.farm=farm
-        self.state=FarmState.susceptible
+        self.state=DiseaseState.susceptible
 
 
-class FarmABTransition:
+class DiseaseABTransition:
     def __init__(self, farm_place, a, b, distribution):
         self.place=farm_place
         self.a=a
@@ -61,10 +61,8 @@ class InfectiousIntensity:
         self.place=farm.place
     def depends(self):
         return [self.place]
-    def affected(self):
-        return []
     def intensity(self, now):
-        if self.place.state in (FarmState.subclinical, FarmState.clinical):
+        if self.place.state in (DiseaseState.subclinical, DiseaseState.clinical):
             return 1
         return None
 
@@ -74,10 +72,8 @@ class DetectionIntensity(object):
         self.place=farm.place
     def depends(self):
         return [self.place]
-    def affected(self):
-        return []
     def intensity(self, now):
-        if self.place.state in (FarmState.clinical, FarmState.recovered):
+        if self.place.state in (DiseaseState.clinical, DiseaseState.recovered):
             return 1
         return None
 
@@ -88,39 +84,49 @@ class InfectPartial:
     """
     def __init__(self, farm):
         self.farm=farm
-        self.place=farm.place
     def depends(self):
         return [self.farm.place]
     def affected(self):
         return [self.farm.place]
     def enabled(self):
-        if self.place.state in (FarmState.susceptible,):
+        if self.place.state in (DiseaseState.susceptible,):
             return True
         else:
             return False
     def fire(self, now, rng):
-        self.place.state=FarmState.latent
+        self.farm.place.state=DiseaseState.latent
 
 
-class Farm(object):
+class SendIntensity(object):
+    """
+    Whether and how much this farm can send.
+    """
+    def __init__(self, farm):
+        self.farm=farm
+    def depends(self):
+        return [self.farm.place]
+    def intensity(self, now):
+        return None
+
+class DiseaseModel(object):
     """
     This is a scenario model for disease state within a farm.
     """
-    def __init__(self, name):
-        self.name=name
-        self.place=FarmPlace(self)
+    def __init__(self, farm):
+        self.farm=farm
+        self.place=DiseasePlace(self)
 
     def write_places(self, writer):
         writer.add_place(self.place)
 
     def write_transitions(self, writer):
-        t=FarmABTransition(self.place, FarmState.latent, FarmState.subclinical,
+        t=DiseaseABTransition(self.place, DiseaseState.latent, DiseaseState.subclinical,
             lambda now: distributions.ExponentialDistribution(0.5, now))
         writer.add_transition(t)
-        t=FarmABTransition(self.place, FarmState.subclinical, FarmState.clinical,
+        t=DiseaseABTransition(self.place, DiseaseState.subclinical, DiseaseState.clinical,
             lambda now: distributions.ExponentialDistribution(0.5, now))
         writer.add_transition(t)
-        t=FarmABTransition(self.place, FarmState.clinical, FarmState.recovered,
+        t=DiseaseABTransition(self.place, DiseaseState.clinical, DiseaseState.recovered,
             lambda now: distributions.ExponentialDistribution(0.5, now))
         writer.add_transition(t)
 
@@ -132,6 +138,105 @@ class Farm(object):
 
     def detectable_intensity(self):
         return DetectionIntensity(self)
+
+###############################################################
+# Quarantine model
+###############################################################
+class QuarantinePlace(object):
+    def __init__(self):
+        self.state=False
+
+class QuarantineTransition(object):
+    def __init__(self, model):
+        self.model=model
+        self.detectable=model.farm.detectable_intensity()
+
+    def depends(self):
+        dep=[self.model.place]
+        dep.extend(self.detectable.depends())
+        return dep
+
+    def affected(self):
+        return [self.model.place]
+
+    def enabled(self):
+        if ((self.detectable.intensity() is not None)
+                and (self.model.place.state is False)):
+            return (True, distributions.ExponentialDistribution(0.1, now))
+        else:
+            return (None, None)
+    def fire(self, now, rng):
+        self.model.place.state=True
+
+class QuarantineIntensity(object):
+    def __init__(self, model):
+        self.model=model
+    def depends(self):
+        return [self.model.place]
+    def intensity(self, now):
+        """
+        Returns true if quarantine in effect.
+        """
+        return self.model.place.state
+
+class QuarantineModel(object):
+    def __init__(self, farm):
+        self.farm=farm
+        self.place=QuarantinePlace()
+
+    def write_places(self, writer):
+        writer.add_place(self.place)
+
+    def write_transitions(self, writer):
+        writer.write_transition(QuarantineTransition(self))
+
+    def quarantine(self):
+        return QuarantineIntensity(self)
+
+
+
+###############################################################
+# Farm contains models.
+###############################################################
+class SendIntensity(object):
+    def __init__(self, farm):
+        self.farm=farm
+        self.quarantine=farm.quarantine()
+
+    def depends(self):
+        return self.quarantine.depends()
+    def intensity(self, now):
+        return self.quarantine.intensity(now)==False
+
+class Farm(object):
+    def __init__(self, name, size=1000):
+        self.name=name
+        self.size=size
+        self.disease=DiseaseModel(self)
+        self.quarantine=QuarantineModel(self)
+
+    def write_places(self, writer):
+        self.disease.add_place(writer)
+        self.quarantine.add_place(writer)
+
+    def write_transitions(self, writer):
+        self.disease.write_transitions(writer)
+        self.quarantine.write_transitions(writer)
+
+    def infectious_intensity(self):
+        return self.disease.infectious_intensity(self)
+
+    def infection_partial(self):
+        return self.disease.infection_partial(self)
+
+    def detectable_intensity(self):
+        return self.disease.detectable_intensity(self)
+
+    def send_shipments(self):
+        return SendIntensity(self)
+
+    def receive_shipments(self):
+        return ReceiveIntensity(self)
 
 
 ##############################################################
@@ -224,8 +329,6 @@ class RestrictionIntensity(object):
         self.place=place
     def depends(self):
         return [self.place]
-    def affected(self):
-        return []
     def intensity(self, now):
         if self.restriction_place is None:
             return None
@@ -269,7 +372,11 @@ class DirectModel(object):
     def __init__(self, landscape):
         self.landscape=landscape
 
+    def write_places(self, writer):
+        pass
 
+    def write_transitions(self, writer):
+        pass
 
 
 class Landscape(object):
@@ -303,14 +410,14 @@ def Build():
     restrictions.write_transitions(net)
 
     initial_idx=0
-    farms[initial_idx].place.state=FarmState.latent
+    farms[initial_idx].place.state=DiseaseState.latent
     return net
 
 
 ########################################
 # This is the part that runs the SIR
 def observer(transition, when):
-    if isinstance(transition, FarmABTransition):
+    if isinstance(transition, DiseaseABTransition):
         print("AB {0} {1} {2} {3}".format(transition.place.farm.name,
             transition.a, transition.b, when))
     elif isinstance(transition, InfectTransition):
