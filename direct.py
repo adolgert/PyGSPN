@@ -10,9 +10,13 @@ import scipy.spatial as spatial
 import matplotlib
 matplotlib.use('pdf')
 import matplotlib.pyplot as plt
+import matplotlib.path as path
+import matplotlib.patches as patches
 import point_process
 
 logger=logging.getLogger(__file__)
+
+class Scenario(object): pass
 
 def farm_locations(farm_cnt):
     # Put farms in space with some non-uniform distribution.
@@ -21,23 +25,35 @@ def farm_locations(farm_cnt):
     pts=point_process.thomas_point_process_2D(kappa, 0.2, mu, (0, 1, 0, 1))
     cnt=len(pts)
     logger.debug("There are {0} points".format(cnt))
+    zone_radius=0.3
+    infect_radius=0.6
 
     # Create a zone somewhere in the bounds and zone all inside.
     zone_center=np.random.rand(2).reshape(1,2)
     zone_distance=spatial.distance.cdist(pts, zone_center).flatten()
     logger.debug("zone distance {0}".format(zone_distance))
-    zoned=(zone_distance<0.3).flatten()
+    zoned=(zone_distance<zone_radius).flatten()
 
     # Quarantine everything near the zone center, including outside it.
     p=np.zeros(cnt)
-    p[zone_distance<0.6]=0.4
+    p[zone_distance<infect_radius]=0.4
     quarantined=np.random.binomial(1, p)==1
     logger.debug("zoned {0}".format(zoned))
     logger.debug("quarantined {0}".format(quarantined))
     possible_starts=np.where(np.logical_and(
             np.logical_not(zoned), np.logical_not(quarantined))==True)[0]
     start_idx=np.random.choice(possible_starts)
-    return pts, zoned, quarantined, start_idx
+    scenario=Scenario()
+    scenario.pts=pts
+    scenario.zoned=zoned
+    scenario.quarantined=quarantined
+    scenario.start_idx=start_idx
+    scenario.zone_center=zone_center
+    scenario.zone_radius=zone_radius
+    scenario.infect_radius=infect_radius
+    scenario.uniform_kernel_max=0.4
+    scenario.epsilon=0.01
+    return scenario
 
 
 def naadsm_direct(scenario, run_cnt=1):
@@ -45,8 +61,10 @@ def naadsm_direct(scenario, run_cnt=1):
     This tries to replicate A4.1 Direct contact spread from
     NAADSM Model Specification 1.2.1.
     """
-    pts, zoned, quarantined, start_idx=scenario
-    uniform_kernel_max=0.4
+    pts=scenario.pts
+    zoned=scenario.zoned
+    quarantined=scenario.quarantined
+    start_idx=scenario.start_idx
     start_loc=pts[start_idx].reshape(1,2)
 
     #3a Make a list of those that can be a recipient.
@@ -55,19 +73,18 @@ def naadsm_direct(scenario, run_cnt=1):
     recipients=pts[recipients_idx]
     zoned_recipients=zoned[recipients_idx]
 
-    epsilon=0.01
     distances=spatial.distance.cdist(recipients, start_loc).flatten()
 
     hits=np.zeros(pts.shape[0], dtype=np.int)
     for run_idx in range(run_cnt):
         #3c Sample a number, distance, from the movement distance distribution.
         # Using uniform here.
-        travel_distance=np.random.uniform(0, uniform_kernel_max)
+        travel_distance=np.random.uniform(0, scenario.uniform_kernel_max)
 
         #3d Choose the closest
         closest_idx=np.argmin(np.abs(distances-travel_distance))
         closest_distance=distances[closest_idx]
-        possibles=np.where(distances-closest_distance<epsilon)[0]
+        possibles=np.where(distances-closest_distance<scenario.epsilon)[0]
         logger.debug("possibles {0}".format(possibles))
 
         #3e If forbidden by zoning, drop it.
@@ -83,8 +100,10 @@ def faithful(scenario, run_cnt=1):
     """
     This is an attempt at an equivalent continuous-time model.
     """
-    pts, zoned, quarantined, start_idx=scenario
-    uniform_kernel_max=0.4
+    pts=scenario.pts
+    zoned=scenario.zoned
+    quarantined=scenario.quarantined
+    start_idx=scenario.start_idx
     start_loc=pts[start_idx].reshape(1,2)
 
     #3a Make a list of those that can be a recipient.
@@ -94,26 +113,29 @@ def faithful(scenario, run_cnt=1):
     zoned_recipients=zoned[recipients_idx]
 
     #3d For each recipient, find whether it will really receive.
-    epsilon=0.01
     distances=spatial.distance.cdist(recipients, start_loc).flatten()
     sort_idx=np.argsort(distances)
+    logger.debug("faithful distances {0}".format(distances[sort_idx]))
     # What is the probability of sending a truck, ignoring zones?
     prob_basket=np.zeros(len(distances), dtype=np.double)
     inner=0.0
-    for didx in range(1, len(distances)-1):
+    # The -1 assumes the max of the kernel doesn't include at least one farm.
+    for didx in range(0, len(distances)-1):
         ptidx=sort_idx[didx]
-        if inner<uniform_kernel_max:
-            outer=0.5*(distances[ptidx]+distances[sort_idx[didx+1])
+        if inner<scenario.uniform_kernel_max:
+            outer=0.5*(distances[ptidx]+distances[sort_idx[didx+1]])
+            outer=min(outer, scenario.uniform_kernel_max)
             prob_basket[ptidx]=outer-inner
             inner=outer
     prob_basket/=np.sum(prob_basket)
+    logger.debug("faith prob_basket {0}".format(prob_basket[sort_idx]))
 
     # Now take trucks that would have gone to zones and either
     # don't send them or give them to the nearby available farms.
     adj_prob=np.zeros(len(distances), dtype=np.double)
-    for ridx in range(1, len(distances)-1):
-        possibles=np.where(distances-distances[ridx]<epsilon)[0]
-        unzoned=possibles[zoned_recipients[possibles=False]]
+    for ridx in range(0, len(distances)-1):
+        possibles=np.where(distances-distances[ridx]<scenario.epsilon)[0]
+        unzoned=possibles[zoned_recipients[possibles]==False]
         if len(unzoned)>0:
             adj_prob[unzoned]+=prob_basket[ridx]/len(unzoned)
 
@@ -122,17 +144,52 @@ def faithful(scenario, run_cnt=1):
     # we draw a value.
     total_prob=np.sum(adj_prob)
     adj_prob /= total_prob
+    logger.debug("faith adj_prob {0}".format(adj_prob[sort_idx]))
     indices=np.array(range(len(adj_prob)))
 
     hits=np.zeros(pts.shape[0], dtype=np.int)
     bins=np.array(range(len(adj_prob)+1))
-    hits=np.histogram(np.random.choice(indices, p=adj_prob,
+    recipient_hits=np.histogram(np.random.choice(indices, p=adj_prob,
         size=run_cnt*total_prob), bins=bins)[0]
+    hits[recipients_idx]=recipient_hits
     return hits    
 
 
 def plot_comparison(scenario, hits0, hits1):
-    pts, zoned, quarantined, start_idx=scenario
+    plot_scatter(scenario, hits0, "scatter0.pdf")
+    plot_scatter(scenario, hits1, "scatter1.pdf")
+    plot_histogram(hits0, hits1)
+
+
+def plot_histogram(hits0, hits1):
+    nonzero=set(np.nonzero(hits0)[0])
+    nonzero.update(set(np.nonzero(hits1)[0]))
+    hits_idx=list(nonzero)
+    h0=hits0[hits_idx]
+    h1=hits1[hits_idx]
+    N=len(h0)
+    ind=np.arange(N)
+    width=0.35
+
+    fig, ax=plt.subplots()
+    rects0=ax.bar(ind, h0, width, color="blue")
+    rects1=ax.bar(ind+width, h1, width, color="tan")
+
+    ax.set_ylabel("Counts")
+    ax.set_title("Comparison of Infection Counts")
+    #ax.set_xticks(ind+width)
+    ax.set_xlabel("By Unit")
+
+    ax.legend( (rects0[0], rects1[0]), ("NAADSM", "CT"))
+    plt.savefig("hithisto.pdf")
+
+
+
+def plot_scatter(scenario, hits0, filename):
+    pts=scenario.pts
+    zoned=scenario.zoned
+    quarantined=scenario.quarantined
+    start_idx=scenario.start_idx
     max_size=200
     min_size=10
 
@@ -154,13 +211,23 @@ def plot_comparison(scenario, hits0, hits1):
     colors[misquar]=0.5
     #logger.debug("plotsizes {0}".format(sizes))
 
+    fig, ax=plt.subplots()
+
     plt.scatter(hitpts[:,0], hitpts[:,1], s=hithits, c="blue", marker='o',
         alpha=0.5)
     plt.scatter(mispts[:,0], mispts[:,1], s=min_size, c=colors, marker='s',
         alpha=0.5)
     plt.scatter(pts[start_idx,0], pts[start_idx,1], s=min_size, c="orange", marker='*',
         alpha=1)
-    plt.savefig("scatter.pdf", format="pdf")
+    zc=scenario.zone_center[0]
+    plt.scatter(zc[0], zc[1], s=min_size, c="orange", marker='x',
+        alpha=1)
+    zone=path.Path.circle(center=scenario.zone_center[0],
+        radius=scenario.zone_radius)
+    patch=patches.PathPatch(zone, facecolor="yellow", edgecolor="gray",
+        alpha=0.1)
+    ax.add_patch(patch)
+    plt.savefig(filename, format="pdf")
 
 
 if __name__ == "__main__":
@@ -168,7 +235,8 @@ if __name__ == "__main__":
     cnt=100
     scenario=farm_locations(cnt)
     run_cnt=10000
-    hits=naadsm_direct(scenario, run_cnt)
-    print("hits {0}".format(hits))
-    plot_comparison(scenario, hits, hits)
+    hits0=naadsm_direct(scenario, run_cnt)
+    hits1=faithful(scenario, run_cnt)
+    print("hits1 {0}".format(hits1))
+    plot_comparison(scenario, hits0, hits1)
 
