@@ -23,8 +23,8 @@ class DiseaseState(object):
     recovered=5
 
 class DiseasePlace(object):
-    def __init__(self, farm):
-        self.farm=farm
+    def __init__(self, disease_model):
+        self.disease_model=disease_model
         self.state=DiseaseState.susceptible
 
 
@@ -56,9 +56,9 @@ class InfectiousIntensity:
     This is part of a transition which contributes to the hazard
     rate through a factor called an intensity.
     """
-    def __init__(self, farm):
-        self.farm=farm
-        self.place=farm.place
+    def __init__(self, disease_model):
+        self.disease_model=disease_model
+        self.place=disease_model.place
     def depends(self):
         return [self.place]
     def intensity(self, now):
@@ -67,9 +67,9 @@ class InfectiousIntensity:
         return None
 
 class DetectionIntensity(object):
-    def __init__(self, farm):
-        self.farm=farm
-        self.place=farm.place
+    def __init__(self, disease_model):
+        self.disease_model=disease_model
+        self.place=disease_model.place
     def depends(self):
         return [self.place]
     def intensity(self, now):
@@ -88,8 +88,8 @@ class InfectPartial:
         return [self.farm.place]
     def affected(self):
         return [self.farm.place]
-    def enabled(self):
-        if self.place.state in (DiseaseState.susceptible,):
+    def enabled(self, now):
+        if self.farm.place.state in (DiseaseState.susceptible,):
             return True
         else:
             return False
@@ -159,8 +159,8 @@ class QuarantineTransition(object):
     def affected(self):
         return [self.model.place]
 
-    def enabled(self):
-        if ((self.detectable.intensity() is not None)
+    def enabled(self, now):
+        if ((self.detectable.intensity(now) is not None)
                 and (self.model.place.state is False)):
             return (True, distributions.ExponentialDistribution(0.1, now))
         else:
@@ -188,7 +188,7 @@ class QuarantineModel(object):
         writer.add_place(self.place)
 
     def write_transitions(self, writer):
-        writer.write_transition(QuarantineTransition(self))
+        writer.add_transition(QuarantineTransition(self))
 
     def quarantine(self):
         return QuarantineIntensity(self)
@@ -216,21 +216,21 @@ class Farm(object):
         self.quarantine=QuarantineModel(self)
 
     def write_places(self, writer):
-        self.disease.add_place(writer)
-        self.quarantine.add_place(writer)
+        self.disease.write_places(writer)
+        self.quarantine.write_places(writer)
 
     def write_transitions(self, writer):
         self.disease.write_transitions(writer)
         self.quarantine.write_transitions(writer)
 
     def infectious_intensity(self):
-        return self.disease.infectious_intensity(self)
+        return self.disease.infectious_intensity()
 
     def infection_partial(self):
-        return self.disease.infection_partial(self)
+        return self.disease.infection_partial()
 
     def detectable_intensity(self):
-        return self.disease.detectable_intensity(self)
+        return self.disease.detectable_intensity()
 
     def send_shipments(self):
         return SendIntensity(self)
@@ -261,7 +261,7 @@ class InfectTransition(object):
 
     def enabled(self, now):
         intensity=self.intensity.intensity(now)
-        if intensity is not None and self.action.enabled():
+        if intensity is not None and self.action.enabled(now):
             rate=0.5*intensity
             return (True, distributions.ExponentialDistribution(rate, now))
         else:
@@ -390,6 +390,7 @@ class Landscape(object):
         for add_idx in range(individual_cnt):
             self.farms.append(Farm(add_idx))
 
+class Scenario(object): pass
 
 def Build():
     net=llcp.LLCP()
@@ -409,21 +410,24 @@ def Build():
     restrictions.write_places(net)
     restrictions.write_transitions(net)
 
-    initial_idx=0
-    farms[initial_idx].place.state=DiseaseState.latent
-    return net
+    scenario=Scenario()
+    scenario.landscape=landscape
+    scenario.farms=farms
+    return net, scenario
 
 
 ########################################
 # This is the part that runs the SIR
 def observer(transition, when):
     if isinstance(transition, DiseaseABTransition):
-        print("AB {0} {1} {2} {3}".format(transition.place.farm.name,
+        print("AB {0} {1} {2} {3}".format(transition.place.disease_model.farm.name,
             transition.a, transition.b, when))
     elif isinstance(transition, InfectTransition):
-        print("Infect {0} {1} {2}".format(transition.intensity.place.farm.name,
-            transition.action.place.farm.name,
+        print("Infect {0} {1} {2}".format(transition.intensity.place.disease_model.farm.name,
+            transition.action.farm.farm.name,
             when))
+    elif isinstance(transition, QuarantineTransition):
+        print("Quarantine {0}".format(when))
     else:
         print("Unknown transition {0}".format(transition))
     return True
@@ -431,7 +435,9 @@ def observer(transition, when):
 def test_farm():
     rng=np.random.RandomState()
     rng.seed(33333)
-    net=Build()
+    net, scenario=Build()
+    initial_idx=0
+    scenario.farms[initial_idx].disease.infection_partial().fire(0, rng)
     sampler=sample.NextReaction(net, rng)
     run=runner.RunnerFSM(sampler, observer)
     run.init()
