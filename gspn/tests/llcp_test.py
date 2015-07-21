@@ -1,3 +1,4 @@
+from unittest import TestCase
 import logging
 import numpy as np
 import sample
@@ -23,6 +24,7 @@ def test_sir():
     run.run()
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    test_sir()
+class TestSIR(TestCase):
+    def test_sir_runs(self):
+        logging.basicConfig(level=logging.DEBUG)
+        test_sir()
