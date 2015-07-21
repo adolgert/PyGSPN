@@ -1,6 +1,6 @@
 import logging
 import math
-import pairing_heap
+import gspn.pairing_heap
 
 logger=logging.getLogger(__file__)
 
@@ -41,7 +41,7 @@ class NextReactionRecord:
 
 class NextReaction:
     def __init__(self, system, rng):
-        self.priority=pairing_heap.pairing_heap()
+        self.priority=gspn.pairing_heap.pairing_heap()
         self.system=system
         self.rng=rng
 

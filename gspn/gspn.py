@@ -286,10 +286,10 @@ class GSPNProcess:
         return satisfied
 
     def transition_distribution(self, tid, te):
-
+        pass
 
     def enabled_transitions(self):
         enabled_t=list()
         for t in self.gspn.t:
             if self.stoichiometry_satisfied(tid):
-
+                pass

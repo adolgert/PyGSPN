@@ -25,4 +25,4 @@ setup(name="gspn",
         "scipy"
     ],
     include_package_date=True,
-    zip_safe="False")
+    zip_safe=False)
