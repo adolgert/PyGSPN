@@ -203,13 +203,16 @@ class UniformDistribution(object):
     def implicit_hazard_integral(self, xa, t0):
         Ft=1-np.exp(-xa)
         t0e=t0-self.te
-        low=max(t0e, self.ta)
-        high=min(t0e, self.tb)
-        r=self.te+low*(1-Ft) + high*Ft
+        low=max(t0e, self.a)
+        r=self.te+low*(1-Ft) + self.b*Ft
         return r
 
     def enabling_time(self):
         return self.te
+
+# LogLogistic
+# Gaussian
+# Histogram
 
 
 class EmpiricalDistribution(object):
