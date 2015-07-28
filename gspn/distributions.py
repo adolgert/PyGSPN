@@ -1,17 +1,46 @@
 import logging
 import numpy as np
+import scipy.stats
 
 logger=logging.getLogger(__file__)
 
 
+def anderson_sample_tester(distribution, now, cnt, rng):
+    """
+    This checks whether hazard_integral and implicit_hazard_integral
+    work by using them to sample a distribution.
+    """
+    samples=np.zeros(cnt)
+    maxdiff=0.0
+    for i in range(cnt):
+        interval=-np.log(rng.uniform(0, 1))
+        last_mod=now
+        firing_time=distribution.implicit_hazard_integral(interval, last_mod)
+        next_fire=firing_time
+        stops=np.linspace(now, firing_time, num=rng.randint(0,5))
+        for stop in stops[:-1]:
+            time_penalty=distribution.hazard_integral(last_mod, stop)
+            interval-=time_penalty
+            next_fire=distribution.implicit_hazard_integral(interval, stop)
+            last_mod=stop
+        maxdiff=max(abs(next_fire-firing_time), maxdiff)
+        samples[i]=next_fire
+    return samples
 
-class ExponentialDistribution:
+
+class ExponentialDistribution(object):
+    """
+    This represents an exponential distribution.
+    .. math::
+
+        F(t) = 1-e^{-\int_0^t \lambda(s) ds}
+    """
     def __init__(self, lam, te):
         self.lam=lam
         self.te=te
 
     def sample(self, now, rng):
-        return now+rng.exponential(self.lam)
+        return now+rng.exponential(scale=1.0/self.lam)
 
     def hazard_integral(self, t0, t1):
         return self.lam*(t1-t0)
@@ -22,7 +51,11 @@ class ExponentialDistribution:
     def enabling_time(self):
         return self.te
 
-class WeibullDistribution:
+
+class WeibullDistribution(object):
+    """
+    This is a Weibull distribution.
+    """
     def __init__(self, lam, k, te, shift):
         self.lam=lam
         self.k=k
@@ -36,9 +69,9 @@ class WeibullDistribution:
         d=now - (self.te - self.delta)
         value=0
         if d>0:
-            value=l*np.pow(-np.log(1-U) + np.pow(d/l, k), 1/k)-d
+            value=l*np.pow(-np.log(1-U) + np.pow(d/l, k), 1/k)+self.te
         else:
-            value=-d+l*np.pow(-np.log(1-U), 1/k)
+            value=l*np.pow(-np.log(1-U), 1/k)+self.te
         return now + value
 
     def hazard_integral(self, t0, t1):
@@ -51,3 +84,217 @@ class WeibullDistribution:
 
     def enabling_time(self):
         return self.te
+
+
+class GammaDistribution(object):
+    """
+    This is a gamma distribution with a shape and a rate,
+    not a shape and a scale.
+    Given a Gamma function,
+    .. math::
+
+        \Gamma(t)=\int_0^\infty x^{t-1}e^{-x}dx
+
+    and the (lower) incomplete gamma function,
+    .. math::
+
+        \gamma(x;\alpha)=\int_0^x t^{\alpha-1}e^{-t}dt
+
+    the CDF of the gamma distribution is
+    .. math::
+
+        F(x;\alpha, \beta)=\frac{\gamma(\alpha, \beta x)}{\Gamma(\alpha)}
+
+    The PDF is
+    .. math::
+
+        f(x)=\frac{\beta^{\alpha}}{\Gamma(\alpha)}x^{\alpha-1}e^{-\beta x}
+
+    This is sampled with possible left censoring. 
+    """
+    def __init__(self, alpha, beta, te):
+        self.alpha=alpha
+        self.beta=beta
+        self.te=te
+
+    def sample(self, now, rng):
+        """
+        Sampling accounts for time shift and uses given random
+        number generator.
+        """
+        U=rng.uniform(low=0, high=1, size=1)
+        d=now-self.te
+        if d>0:
+            cumulative=scipy.stats.gamma.cdf(x=d, a=self.alpha,
+                scale=1.0/self.beta, loc=0)
+            return scipy.stats.gamma.isf(1-U*(1-cumulative)-cumulative,
+                self.alpha, scale=1.0/self.beta, loc=0) + self.te
+        else:
+            return scipy.stats.gamma.isf(1-U,
+                self.alpha, scale=1.0/self.beta, loc=0) + self.te
+
+    def hazard_integral(self, t0, t1):
+        """
+        Our tools include
+
+         - gammainc(a, x), normalized lower incomplete
+         - gammaincinv(a, y), gammainc(a, x)=y
+         - gammaincc(a, x), 1-gammainc(a, x)
+         - gammainccinv(a, y), gammaincc(a, x)=y
+        """
+        return np.log(
+            (1-scipy.special.gammainc(self.alpha, self.beta*(t0-self.te)))/
+            (1-scipy.special.gammainc(self.alpha, self.beta*(t1-self.te)))
+            )
+
+    def implicit_hazard_integral(self, xa, t0):
+        quad=1-np.exp(-xa)*(1-scipy.special.gammainc(self.alpha,
+                self.beta*(t0-self.te)))
+        return self.te+scipy.special.gammaincinv(self.alpha, quad)/self.beta
+
+    def enabling_time(self):
+        return self.te
+
+
+
+class UniformDistribution(object):
+    """
+    Uniform distribution between a and b, offset by an enabling time te.
+    """
+    def __init__(self, a, b, te):
+        """
+        te is an absolute time.
+        The earliest firing time is >te+a.
+        The latest firing time is <=te+b.
+        """
+        self.a=a
+        self.b=b
+        self.te=te
+
+    def sample(self, now, rng):
+        """
+        Sampling accounts for time shift and uses given random
+        number generator.
+        """
+        if now<=self.te+self.a:
+            return rng.uniform(low=self.te+self.a, high=self.te+self.b)
+        elif now<=self.te+self.b:
+            return rng.uniform(low=now, high=self.te+self.b)
+        else:
+            return np.float("nan")
+
+    def hazard_integral(self, t0, t1):
+        """
+        Integrate the hazard, taking into account when the uniform
+        interval starts and stops.
+        """
+        t0e=t0-self.te
+        t1e=t1-self.te
+        if t0e>self.b:
+            return 0
+        if t1e<self.a:
+            return 0
+        low=max(self.a, t0e)
+        high=min(self.b, t1e)
+        numerator=np.log(1-(t0e-self.a)/(self.b-self.a))
+        denominator=np.log((self.b-t1e)/(self.b-self.a))
+        return numerator-denominator
+
+    def implicit_hazard_integral(self, xa, t0):
+        Ft=1-np.exp(-xa)
+        t0e=t0-self.te
+        low=max(t0e, self.ta)
+        high=min(t0e, self.tb)
+        r=self.te+low*(1-Ft) + high*Ft
+        return r
+
+    def enabling_time(self):
+        return self.te
+
+
+class EmpiricalDistribution(object):
+    """
+    This distribution is used to collect samples and then
+    compare the estimate of the sampled distribution with
+    some known distribution.
+
+    Wikipedia explains this. Kolmogorov-Smirnov test.
+    https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test
+    """
+    def __init__(self, samples):
+        self.samples=samples
+
+    def c_alpha(self):
+        """
+        The hypothesis is that the two distributions are different.
+        The null hypothesis is rejected at level alpha if
+        Dnn*sqrt(nn/(n+n))>c_alpha. This returns a table of c_alpha.
+        The upshot is that you should look for values from the
+        two comparison functions that are less than two.
+        """
+        return [[0.1, 1.22],
+                [0.05, 1.36],
+                [0.025, 1.48],
+                [0.01, 1.63],
+                [0.005, 1.73],
+                [0.001, 1.95]]
+
+    def compare_empirical(self, other):
+        """
+        Compare two empirical distributions using Kolmogorov-Smirnov.
+        This returns the Kolmogorov-smirnov goodness-of-fit,
+        sqrt(n)*D_n, where D_n is the Kolmogorov-smirnov statistic.
+        """
+        self.samples.sort()
+        other.samples.sort()
+        acnt=len(self.samples)
+        aidx=-1
+        bcnt=len(other.samples)
+        bidx=-1
+        maxdiff=0.0
+        while aidx+1<acnt and bidx+1<bcnt:
+            if bidx+1==bcnt:
+                v=self.samples[aidx+1]
+                while aidx+1!=acnt and self.samples[aidx+1]==v:
+                    aidx+=1
+                maxdiff=max(maxdiff, abs((aidx+1)/acnt - (bidx+1)/bcnt))
+            elif aidx+1==acnt:
+                v=other.samples[bidx+1]
+                while bidx+1!=bcnt and other.samples[bidx+1]==v:
+                    bidx+=1
+                maxdiff=max(maxdiff, abs((aidx+1)/acnt - (bidx+1)/bcnt))
+            elif self.samples[aidx+1]<other.samples[bidx+1]:
+                v=self.samples[aidx+1]
+                while aidx+1!=acnt and self.samples[aidx+1]==v:
+                    aidx+=1
+                maxdiff=max(maxdiff, abs((aidx+1)/acnt - (bidx+1)/bcnt))
+            else:
+                v=other.samples[bidx+1]
+                while aidx+1!=acnt and self.samples[aidx+1]==v:
+                    aidx+=1
+                while bidx+1!=bcnt and other.samples[bidx+1]==v:
+                    bidx+=1
+                maxdiff=max(maxdiff, abs((aidx+1)/acnt - (bidx+1)/bcnt))
+        return maxdiff*np.sqrt(acnt*bcnt/(acnt+bcnt))
+
+    def compare_theoretical(self, cdf):
+        """
+        Compare this estimated CDF with a function which returns
+        the CDF at a point. Use Kolmogorov-Smirnov to return a
+        statistic which should be stable with increasing
+        numbers of samples.
+        This returns the Kolmogorov-smirnov goodness-of-fit,
+        sqrt(n)*D_n, where D_n is the Kolmogorov-smirnov statistic.
+        """
+        self.samples.sort()
+        acnt=len(self.samples)
+        aidx=-1
+        maxdiff=0.0
+        while aidx!=acnt:
+            v=self.samples[aidx+1]
+            while self.samples[aidx+1]==v:
+                aidx+=1
+            maxdiff=max(maxdiff,
+                abs(cdf(self.samples[aidx])-(aidx+1)/acnt))
+        return maxdiff*np.sqrt(acnt)
+
