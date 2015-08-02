@@ -2,7 +2,7 @@ import logging
 import math
 import gspn.pairing_heap
 
-logger=logging.getLogger(__file__)
+logger=logging.getLogger("gspn/sample")
 
 
 class FirstReaction:
@@ -59,7 +59,7 @@ class NextReaction:
         self.system.fire(transition, when, self.rng, self._observe)
 
 
-    def _observe(self, transition, olddist, newdist, now):
+    def _observe(self, transition, olddist, newdist, firing, now):
         if newdist is not None:
             if "_nr" in transition.__dict__:
                 record=transition._nr
@@ -95,8 +95,13 @@ class NextReaction:
             record=transition._nr
             self.priority.delete(transition._nr.heap_entry)
             transition._nr.heap_entry=None
-            time_penalty=olddist.hazard_integral(
-                transition._nr.last_modification_time, now)
-            transition._nr.remaining_exponential_interval-=time_penalty
-            transition._nr.last_modification_time=now
+            if not firing:
+                time_penalty=olddist.hazard_integral(
+                    transition._nr.last_modification_time, now)
+                transition._nr.remaining_exponential_interval-=time_penalty
+                transition._nr.last_modification_time=now
+            else:
+                transition._nr.interval=-math.log(self.rng.uniform(0, 1))
+                transition._nr.last_modification_time=now
+
 

@@ -53,7 +53,7 @@ class LLCP:
         self._current_time=when
         transition.fire(when, rng)
         if report is not None:
-            report(transition, transition._distribution, None,
+            report(transition, transition._distribution, None, True,
                 self._current_time)
         transition._distribution=None
         self._incremental_update(transition, report)
@@ -68,7 +68,7 @@ class LLCP:
             enabled, dist=t.enabled(self._current_time)
             if enabled:
                 if report is not None:
-                    report(t, None, dist, self._current_time)
+                    report(t, None, dist, False, self._current_time)
                 t._distribution=dist
             else:
                 t._distribution=None
@@ -81,6 +81,6 @@ class LLCP:
             was_enabled=t._distribution is not None
             enabled, dist=t.enabled(self._current_time)
             if report is not None and (was_enabled or enabled):
-                report(t, t._distribution, dist, self._current_time)
+                report(t, t._distribution, dist, False, self._current_time)
             t._distribution=dist
 
