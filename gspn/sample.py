@@ -55,6 +55,44 @@ class NextReaction:
         return (None, None)
 
 
+    def log_likelihood(self, transitions, now, future_fire):
+        """
+        What is the log likelihood of this transition firing at the given time?
+        transitions is a set of transitions. These are all transitions which
+        would result in the same change of state. Given a well-formed GSPN,
+        with stoichiometries, these can all be calculated.
+        now is the current time.
+        future_fire is the firing time of the next event.
+        """
+        log_likelihood=np.double()
+        for firing_time, enabled_transition in self.priority:
+            if enabled_transition in transitions:
+                log_likelihood+=enabled_transition.loglikelihood(now, future_fire)
+            int_haz=enabled_transition._distribution.hazard_integral(
+                now, future_fire)
+            log_likelihood-=int_haz
+        return log_likelihood
+
+
+    def integrated_hazard(self, transitions, cumulative, now, future):
+        """
+        This totals the integrated hazard for all transitions.
+        transitions is a dictionary from transition to a list
+        of indices into the cumulative array.
+        For each entry in the list, there is an entry in the 
+        array cumulative, which is an array of doubles.
+        This finds the hazard of every enabled transition, adding
+        it to the cumulative array depending on its locations
+        in transitions.
+        """
+        for firing_time, enabled_transition in self.priority:
+            if enabled_transition in transitions.keys():
+                int_haz=enabled_transition._distribution.hazard_integral(
+                    now, future)
+                for idx in transitions[enabled_transition]:
+                    cumulative[idx]+=int_haz
+
+
     def fire(self, transition, when):
         self.system.fire(transition, when, self.rng, self._observe)
 

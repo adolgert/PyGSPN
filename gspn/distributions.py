@@ -48,6 +48,9 @@ class ExponentialDistribution(object):
     def implicit_hazard_integral(self, xa, t0):
         return t0+xa/self.lam
 
+    def loglikelihood(self, t0, tf):
+        return -self.lam*(tf-t0)
+
     def enabling_time(self):
         return self.te
 
@@ -152,6 +155,14 @@ class GammaDistribution(object):
                 self.beta*(t0-self.te)))
         return self.te+scipy.special.gammaincinv(self.alpha, quad)/self.beta
 
+    def loglikelihood(self, t0, tf):
+        t0e=t0-self.te
+        logf=(np.log(np.power(self.beta, self.alpha)*
+            np.power(t0e, self.alpha-1))
+            -self.beta*t0e-scipy.special.gammaln(self.alpha))
+        integrated=self.hazard_integral(self.te, t0)
+        return logf + integrated
+
     def enabling_time(self):
         return self.te
 
@@ -206,6 +217,16 @@ class UniformDistribution(object):
         low=max(t0e, self.a)
         r=self.te+low*(1-Ft) + self.b*Ft
         return r
+
+    def loglikelihood(self, t0, tf):
+        t0e=t0-self.te
+        tfe=tf-self.te
+        if tfe<self.a or te>=self.b:
+            return np.double("nan")
+        t0e=max(t0e, self.a)
+        ln_pdf=np.log((tf-self.a)/(self.b-self.a))
+        int_hazard=self.hazard_integral(self.te, t0)
+        return ln_pdf + int_hazard
 
     def enabling_time(self):
         return self.te

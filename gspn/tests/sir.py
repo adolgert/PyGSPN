@@ -1,9 +1,6 @@
 import logging
 import numpy as np
-import distributions
-import llcp
-import sample
-import runner
+import gspn
 
 logger=logging.getLogger(__file__)
 
@@ -26,7 +23,7 @@ class RecoverTransition:
 
     def enabled(self, now):
         if self.i.count>0:
-            return (True, distributions.ExponentialDistribution(1.0, now))
+            return (True, gspn.ExponentialDistribution(1.0, now))
         else:
             return (False, None)
 
@@ -49,7 +46,7 @@ class InfectTransition:
 
     def enabled(self, now):
         if self.i0.count>0 and self.s1.count>0:
-            return (True, distributions.ExponentialDistribution(0.5, now))
+            return (True, gspn.ExponentialDistribution(0.5, now))
         else:
             return (False, None)
 
@@ -59,7 +56,7 @@ class InfectTransition:
 
 
 def BuildSIR(individual_cnt):
-    net=llcp.LLCP()
+    net=gspn.LLCP()
     places=dict()
     for add_idx in range(individual_cnt):
         for disease_state in ['s', 'i', 'r']:
@@ -104,8 +101,8 @@ def test_sir():
     rng=np.random.RandomState()
     rng.seed(33333)
     net=BuildSIR(10)
-    sampler=sample.NextReaction(net, rng)
-    run=runner.RunnerFSM(sampler, observer)
+    sampler=gspn.NextReaction(net, rng)
+    run=gspn.RunnerFSM(sampler, observer)
     run.init()
     run.run()
 
