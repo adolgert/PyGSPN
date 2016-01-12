@@ -66,6 +66,8 @@ class WeibullDistribution(object):
         self.delta=shift
 
     def sample(self, now, rng):
+        logger.debug("WeibullDistribution.sample l={0}, k={1}, te={2}".format(
+            self.lam, self.k, self.te))
         U=rng.uniform(0, 1)
         l=self.lam
         k=self.k
@@ -78,12 +80,15 @@ class WeibullDistribution(object):
         return now + value
 
     def hazard_integral(self, t0, t1):
+        logger.debug("WeibullDistribution.hazard l={0}, k={1}, te={2}".format(
+            self.lam, self.k, self.te))
         return ( np.power((t1-self.te)/self.lam, self.k)
             -np.power((t0-self.te)/self.lam, self.k) )
 
     def implicit_hazard_integral(self, xa, t0):
-        return self.te+ self.lam*np.power(xa+np.power((t0-self.te)/self.lam,
-                self.k), 1/self.k)
+        logger.debug("WeibullDistribution.implicit l={0}, k={1}, te={2}".format(
+            self.lam, self.k, self.te))
+        return t0 + self.lam * xa**(1/self.k)
 
     def enabling_time(self):
         return self.te
