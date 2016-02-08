@@ -44,6 +44,11 @@ class LLCP:
             d._adjacency.append(transition)
 
     def init(self, report=None):
+        self._current_time=0.0
+        for transition in self.t:
+            transition._distribution=None
+            if "_nr" in dir(transition):
+                del transition._nr
         self._initial_enable(report)
 
     def current_time(self):

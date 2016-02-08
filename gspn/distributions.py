@@ -86,9 +86,11 @@ class WeibullDistribution(object):
             -np.power((t0-self.te)/self.lam, self.k) )
 
     def implicit_hazard_integral(self, xa, t0):
-        logger.debug("WeibullDistribution.implicit l={0}, k={1}, te={2}".format(
-            self.lam, self.k, self.te))
-        return t0 + self.lam * xa**(1/self.k)
+        t1=t0 + self.lam * xa**(1/self.k)
+        logger.debug(("WeibullDistribution.implicit l={0}, k={1}, te={2} "+
+            "xa={3} t0={4} t1={5}").format(
+            self.lam, self.k, self.te, xa, t0, t1))
+        return t1
 
     def enabling_time(self):
         return self.te
