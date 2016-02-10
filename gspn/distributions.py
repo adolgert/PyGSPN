@@ -242,6 +242,102 @@ class UniformDistribution(object):
 # Gaussian
 # Histogram
 
+class PiecewiseLinearDistribution(object):
+    """
+    This is a piecewise linear hazard, not a piecewise linear probability.
+    """
+    def __init__(self, times, hazards, enabling_time):
+        assert(times[0]<1e-6)
+        self.b=times
+        self.w=hazards
+        self.te=enabling_time
+        self.partial_sum=np.zeros((len(times),), dtype=np.double)
+
+        total=0
+        for idx in range(len(times)-1):
+            self.partial_sum[idx]=total
+            total+=0.5*(hazards[idx]+hazards[idx+1])*(times[idx+1]-times[idx])
+        self.partial_sum[len(times)-1]=total
+
+    def sample(self, now, rng):
+        """
+        Sampling accounts for time shift and uses given random
+        number generator.
+        """
+        raise RuntimeError("Cannot sample this yet.")
+
+    def hazard_integral(self, t0, t1):
+        """
+        Integrate the hazard, taking into account when the uniform
+        interval starts and stops.
+        """
+        t0e=t0-self.te
+        t1e=t1-self.te
+        if t1e<self.b[0]:
+            return 0
+        # Take the array of hazards at times and chop it off
+        # on the left at t0e.
+        b, w=(np.copy(self.b), np.copy(self.w))
+        left=np.where(b<=t0e)[0][-1]
+        b=b[left:]
+        w=w[left:]
+        b[0]=t0e
+        # Chop off the right after t1e.
+        right=np.where(b<t1e)[0][-1]
+        b=b[:(right+1)]
+        w=w[:(right+1)]
+        # Add a point back for the end point.
+        b=np.hstack([ b, np.array([t1e])])
+        w=np.hstack([ w, np.array([w[-1]])])
+
+        total=0.0
+        for idx in range(b.shape[0]-1):
+            total+=w[idx]*(b[idx+1]-b[idx])
+        return total
+
+
+    def implicit_hazard_integral(self, xa, t0):
+        t0e=t0-self.te
+        # Take the array of hazards at times and chop it off
+        # on the left at t0e.
+        b, w=(np.copy(self.b), np.copy(self.w))
+        left=np.where(b<=t0e)[0][-1]
+        b=b[left:]
+        w=w[left:]
+        b[0]=t0e
+        logger.debug("Piecewise bleft {0} {1}".format(b, w))
+        b-=t0e   # Now it starts at 0.
+        logger.debug("Piecewise bleft {0} {1}".format(b, w))
+
+        idx=0
+        t1e=0
+        while xa>0:
+            x0=b[idx]
+            if idx<b.shape[0]-1:
+                x1=b[idx+1]
+            else:
+                x1=float("inf")
+            if w[idx]>0:
+                t1e=x0+xa/w[idx]
+            else:
+                t1e=float("inf")
+            logger.debug("Piecewise midcalc x0 {0} x1 {1} t1e {2}".format(
+                x0, x1, t1e))
+            if t1e<x1:
+                xa=0
+            else:
+                xa-=(x1-x0)*w[idx]
+            idx+=1
+
+        return t1e+t0
+
+    def loglikelihood(self, t0, tf):
+        return None
+ 
+    def enabling_time(self):
+        return self.te
+
+
 
 class EmpiricalDistribution(object):
     """
