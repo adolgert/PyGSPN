@@ -250,13 +250,13 @@ class PiecewiseLinearDistribution(object):
     """
     def __init__(self, times, hazards, enabling_time):
         assert(times[0]<1e-6)
-        self.b=times
-        self.w=hazards
+        self.b=np.array(times, dtype=np.double)
+        self.w=np.array(hazards, dtype=np.double)
         if self.b[-1]<float("inf"):
-            self.b.append(float("inf"))
-            self.w.append(self.w[-1])
+            self.b=np.hstack([self.b, float("inf")])
+            self.w=np.hstack([self.w, self.w[-1]])
         self.te=enabling_time
-        self.partial_sum=np.zeros((len(times),), dtype=np.double)
+        self.wcopy=np.copy(self.w)
 
     def sample(self, now, rng):
         """
@@ -293,6 +293,7 @@ class PiecewiseLinearDistribution(object):
         for idx in range(b.shape[0]-1):
             db=b[idx+1]-b[idx]
             total+=0.5*db*(w[idx+1]+w[idx])
+        assert(np.all(self.w==self.wcopy))
         return total
 
 
@@ -316,15 +317,22 @@ class PiecewiseLinearDistribution(object):
             # Create a putative right-hand point, given the current
             # slope, and see if it's before the right-hand point
             # that starts the next segment.
-            t1e=b[idx]+2*xa/(w[idx]+w[idx+1])
-            logger.debug("Predicted t {0} for x {1}".format(t1e, b[idx]))
-            # The last entry is infinity, so this is safe.
-            if t1e<b[idx+1]:
-                xa=0
+            if (w[idx]+w[idx+1])/xa > 1e-20:
+                t1e=b[idx]+2*xa/(w[idx]+w[idx+1])
+                # The last entry is infinity, so this is safe.
+                if t1e<b[idx+1]:
+                    xa=0
+                else:
+                    xa-=(b[idx+1]-b[idx])*0.5*(w[idx]+w[idx+1])
             else:
-                xa-=(b[idx+1]-b[idx])*0.5*(w[idx]+w[idx+1])
+                if np.isinf(b[idx+1]):
+                    raise RuntimeError("Could not solve for t0 {0}".format(
+                        xa))
+                else:
+                    pass # Go to next entry in table.
             idx+=1
 
+        assert(np.all(self.w==self.wcopy))
         return t1e+t0
 
     def loglikelihood(self, t0, tf):
